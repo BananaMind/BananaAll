@@ -1,0 +1,8 @@
+torch>=2.5
+transformers>=5.7
+datasets>=4.8
+accelerate>=1.0
+peft>=0.19
+tokenizers>=0.21
+huggingface_hub>=1.0
+lm-eval>=0.4
