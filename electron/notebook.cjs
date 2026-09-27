@@ -120,16 +120,23 @@ ${sources}
 
 def _bananaall_notebook_train():
     dependencies = [
-        "transformers>=5.7", "datasets>=4.8", "accelerate>=1.0",
+        "transformers>=5.7", "datasets>=4.8", "accelerate>=1.13",
         "peft>=0.19", "tokenizers>=0.21", "huggingface_hub>=1.0"
     ]
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *dependencies])
     import torch
-    if not torch.cuda.is_available():
-        raise RuntimeError("No GPU is visible to PyTorch. Enable a GPU runtime in Colab or Molab and run this cell again.")
+    use_cuda = torch.cuda.is_available()
+    xpu_visible = not use_cuda and hasattr(torch, "xpu") and torch.xpu.is_available()
+    if xpu_visible:
+        from accelerate.utils import is_xpu_available
+        if not is_xpu_available():
+            raise RuntimeError("Intel GPU found, but this runtime needs XPU PyTorch 2.7+ and Accelerate 1.13+.")
+    use_xpu = xpu_visible
+    if not use_cuda and not use_xpu:
+        raise RuntimeError("No CUDA, ROCm, or Intel XPU GPU is visible to PyTorch. Enable a supported GPU runtime and run this cell again.")
     if CONFIG.get("architecture") == "ternary" and (torch.version.hip or not torch.version.cuda):
         raise RuntimeError("Experimental Ternary training requires an NVIDIA GPU with CUDA PyTorch.")
-    print("Training on", torch.cuda.get_device_name(0), flush=True)
+    print("Training on", torch.cuda.get_device_name(0) if use_cuda else torch.xpu.get_device_name(0), flush=True)
 ${tokenSetup}    workdir = pathlib.Path(tempfile.mkdtemp(prefix="bananaall-notebook-"))
     for name, contents in SOURCES.items():
         target = workdir / name

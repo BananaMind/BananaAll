@@ -185,7 +185,7 @@ def main(config):
         emit("status", message="Loading lm-evaluation-harness tasks")
         lm = HFLM(pretrained=config["model"], trust_remote_code=bool(config.get("trustRemoteCode")),
                   batch_size=int(config.get("batchSize", 1)),
-                  device="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+                  device="cuda" if torch.cuda.is_available() else "xpu" if hasattr(torch, "xpu") and torch.xpu.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         output = lm_eval.simple_evaluate(model=lm, tasks=standard, num_fewshot=int(config.get("fewShot", 0)),
                                          limit=limit or None, log_samples=False)
         for key, task in STANDARD.items():

@@ -16,7 +16,7 @@ export type JobEvent = { id: string; type: string; message?: string; detail?: st
 export type JobState = { id: string; kind: Tab; status: 'running' | 'complete' | 'error' | 'stopped';
   outputPath: string; events: JobEvent[]; metrics: { step: number; loss: number }[]; results: Record<string, unknown>;
   progress?: JobEvent; modelParameters?: number; compileDisabled?: boolean; error?: string };
-export type DeviceStatus = { backend: 'rocm' | 'cuda' | 'mps' | 'cpu' | 'unavailable'; name: string; message?: string };
+export type DeviceStatus = { backend: 'rocm' | 'cuda' | 'xpu' | 'mps' | 'cpu' | 'unavailable'; name: string; message?: string };
 export type ReviewSettings = { firstRun: boolean; hasKey: boolean; canRemember: boolean };
 export type BananaBridge = {
   system: () => Promise<{ platform: string; defaultOutput: string; python: string }>;

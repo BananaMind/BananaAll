@@ -324,16 +324,25 @@ def main(config):
     model = make_model(config, tokenizer)
     dataset, collator = make_training_data(config, tokenizer)
     device_cuda = torch.cuda.is_available()
+    device_xpu = not device_cuda and hasattr(torch, "xpu") and torch.xpu.is_available()
+    if device_xpu:
+        from accelerate.utils import is_xpu_available
+        if not is_xpu_available():
+            raise RuntimeError("Intel GPU found, but Accelerate cannot use XPU. Install XPU PyTorch 2.7+ and Accelerate 1.13+.")
     compile_requested = bool(config.get("compile", True))
     precision = config.get("precision", "auto")
-    bf16 = device_cuda and (precision == "bf16" or precision == "auto" and torch.cuda.is_bf16_supported())
-    fp16 = device_cuda and precision == "fp16"
+    bf16_supported = torch.cuda.is_bf16_supported() if device_cuda else torch.xpu.is_bf16_supported() if device_xpu else False
+    bf16 = (device_cuda or device_xpu) and (precision == "bf16" or precision == "auto" and bf16_supported)
+    fp16 = (device_cuda or device_xpu) and precision == "fp16"
     if config["mode"] == "pretraining":
         selected = pretraining_sources(config["datasets"])
         total_tokens = sum(limit for _, limit in selected)
         sequence_length = int(config.get("sequenceLength", 1024))
         total_sequences = (total_tokens + sequence_length - 1) // sequence_length
-        batch_size = max(1, int(config.get("batchSize", 2))) * max(1, torch.cuda.device_count())
+        # Trainer runs one XPU per process; unlike CUDA DataParallel it does
+        # not spread this local worker across every visible Intel GPU.
+        device_count = torch.cuda.device_count() if device_cuda else 1
+        batch_size = max(1, int(config.get("batchSize", 2))) * max(1, device_count)
         total_batches = (total_sequences + batch_size - 1) // batch_size
         accumulation = max(1, int(config.get("gradientAccumulation", 8)))
         max_steps = (total_batches + accumulation - 1) // accumulation
@@ -470,6 +479,8 @@ def main(config):
         gc.collect()
         if device_cuda:
             torch.cuda.empty_cache()
+        elif device_xpu:
+            torch.xpu.empty_cache()
         processed_tokens = 0
         model.zero_grad(set_to_none=True)
         dataset, collator = make_training_data(config, tokenizer)

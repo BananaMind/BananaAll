@@ -1,0 +1,34 @@
+Install BananaAll on this computer and launch it for me.
+
+Project: https://github.com/BananaMind/BananaAll
+This file: https://raw.githubusercontent.com/BananaMind/BananaAll/main/agent_install.txt
+
+You are an installation agent (for example, Codex or Claude Code). Carry out the installation; do not merely give me commands. Work on my actual operating system, report what you did, and only claim GPU support after checking it in the Python environment the app will use.
+
+1. Inspect the machine and the current repository instructions.
+   - Identify Windows, macOS, or Linux; CPU architecture; available NVIDIA, AMD, Intel, or Apple GPU; and whether its driver/runtime is usable.
+   - Check for Git, a current supported Node.js/npm release, and Python 3.12 with venv and pip. If Python 3.12 is unavailable, choose a Python version supported by the current PyTorch and project dependencies. Install missing prerequisites through official installers or the user's normal package manager. Prefer user-level installs. Ask for input only when an OS administrator action or another required decision cannot be performed without it.
+   - Read the current README.md, package.json, package-lock.json, and requirements.txt from the repository. If they have changed since this prompt was written, follow the current repository's requirements.
+
+2. Get the source without losing user data.
+   - If BananaAll is already checked out, use that checkout. Preserve local changes; update with a fast-forward pull only when safe. Otherwise, clone https://github.com/BananaMind/BananaAll.git into a user-owned location that the user can keep.
+   - Run the remaining commands from the repository root. This is a source-based Electron app; do not look for a nonexistent prebuilt installer.
+
+3. Install the app and Python environment.
+   - Use npm ci --include=dev (the Electron launcher is a development dependency). Resolve platform-specific Electron prerequisites if npm reports that they are missing.
+   - Create a repository-local .venv using the chosen Python. On Windows, use a real interpreter such as py -3.12 -m venv .venv when available. On macOS/Linux, use python3.12 -m venv .venv when available. Use that environment's python executable for every pip command below; do not install Python packages into the system interpreter.
+   - Install a PyTorch build for the detected hardware before installing requirements.txt. Choose a compatible stable build from the current official instructions, taking the OS, GPU, driver, and Python version into account:
+       NVIDIA CUDA or Linux AMD ROCm: https://pytorch.org/get-started/locally/
+       Windows AMD ROCm: https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html
+       Intel XPU on supported Windows/Linux hardware: https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html
+       Apple Silicon MPS or CPU: https://pytorch.org/get-started/locally/
+     Do not assume that every AMD or Intel GPU has PyTorch acceleration. If the GPU/OS combination is unsupported, install the CPU build and tell the user clearly. Driver changes that require administrator access may need the user's help.
+   - Install the rest of the backend with the virtual environment's python -m pip install -r requirements.txt. Make sure this has not replaced the intended GPU-enabled PyTorch build. Repair incompatible package versions if necessary, using the current official compatibility guidance.
+
+4. Connect the app to that Python and launch it.
+   - Run npm run build, then launch with npm start from the repository root.
+   - Windows auto-detects the project's .venv\Scripts\python.exe. On macOS/Linux, start Electron with the .venv/bin directory at the front of PATH, and set the absolute .venv/bin/python path in Train > Advanced > Python executable if the app is using another interpreter. If a persisted Python path already exists, check that it points to this environment.
+   - Check that the Electron window opens and that the app's device status matches the selected Python environment. A small Python check using that same interpreter may inspect torch.cuda.is_available(), torch.xpu.is_available(), or torch.backends.mps.is_available() as appropriate. Do not start a training run as an installation check.
+   - If practical, create a user-level launch shortcut that starts this built source checkout with its virtual environment. Do not make a system-wide installation or replace existing Python/Node installations without a specific need.
+
+5. Report the result briefly: installation path, launch command or shortcut, Python executable, detected accelerator (or CPU fallback), whether the app opened, and any action the user must take. Keep optional Hugging Face and OpenRouter credentials out of terminal logs and the final report; those can be set up later in the app when needed.

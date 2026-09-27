@@ -4,6 +4,8 @@ BananaAll is a local, dark-mode SLM Super App. It lets you do everything you nee
 
 ## Run it
 
+To have a coding agent install BananaAll for your operating system, send it: “Install BananaAll for me. Fetch and follow https://raw.githubusercontent.com/BananaMind/BananaAll/main/agent_install.txt.”
+
 ```bash
 npm install
 python3 -m pip install -r requirements.txt
@@ -30,6 +32,18 @@ npm run dev
 ```
 
 On Windows, BananaAll selects `.venv\Scripts\python.exe` automatically when that environment exists in the project. The header shows `ROCm` and the GPU name when the selected Python can use the AMD GPU; `CPU` or `PyTorch unavailable` means that environment is not using it. A different environment can be selected through **Train → Advanced → Python executable**. Install the ROCm PyTorch build before `requirements.txt` so the general `torch>=2.5` requirement is already satisfied by the GPU build. GPU detection confirms that PyTorch can see the device; training support still depends on the specific ROCm release and GPU.
+
+### Linux or Windows with an Intel GPU
+
+Use a GPU and operating system supported by [PyTorch's Intel GPU guide](https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html). Install the Intel GPU driver, then install a recent XPU-enabled PyTorch build in the Python environment used by BananaAll. PyTorch 2.7 or newer is needed for the current Accelerate integration. For example, after activating that environment:
+
+```bash
+python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
+python -m pip install -r requirements.txt
+python -c "import torch; print(torch.xpu.is_available(), torch.xpu.get_device_name(0) if torch.xpu.is_available() else 'No XPU')"
+```
+
+On Windows, a project `.venv\Scripts\python.exe` is detected automatically; on either OS you can choose another interpreter in **Train → Advanced → Python executable**. The header shows `Intel XPU` and the GPU name when the selected environment can use it. In-app training uses XPU through Transformers Trainer, standard benchmarks select XPU, and inference loads onto the available accelerator. BF16 is selected automatically when supported; compile can fall back to eager training if it fails. Experimental Ternary remains NVIDIA-only.
 
 ### macOS with Apple Silicon
 
