@@ -1,7 +1,8 @@
-"""BananaMind 2 style decoder with optional parameter-sharing LFT routing.
+"""BananaMind 2 style decoder with optional LFT or ternary fake quantization.
 
 The model uses pre-RMSNorm, RoPE, grouped-query attention, SwiGLU and tied
 embeddings. BananaMind 2 mode also applies QK norm. LFT changes only routing.
+Ternary mode uses floating-point master weights and fake-quantized projections.
 """
 import math
 import torch
@@ -28,6 +29,26 @@ class RMSNorm(nn.Module):
         return (y * torch.rsqrt(y.square().mean(-1, keepdim=True) + self.eps) * self.weight.float()).to(x.dtype)
 
 
+class TernaryLinear(nn.Linear):
+    """W1.58A8 fake quantization with straight-through gradients.
+
+    The master weights remain floating point for optimization and checkpoints.
+    This layer does not pack ternary weights or use a low-bit inference kernel.
+    """
+
+    def forward(self, x):
+        weights = self.weight.float()
+        weight_scale = weights.detach().abs().mean().clamp_min(1e-6)
+        quantized_weights = (weights / weight_scale).round().clamp(-1, 1) * weight_scale
+        fake_weights = self.weight + (quantized_weights.to(self.weight.dtype) - self.weight).detach()
+
+        activations = x.float()
+        activation_scale = activations.detach().abs().amax(dim=-1, keepdim=True).clamp_min(1e-6) / 127
+        quantized_activations = (activations / activation_scale).round().clamp(-127, 127) * activation_scale
+        fake_activations = x + (quantized_activations.to(x.dtype) - x).detach()
+        return F.linear(fake_activations, fake_weights, self.bias)
+
+
 def apply_rope(x, theta, position_ids):
     dim = x.shape[-1]
     inv = 1.0 / (theta ** (torch.arange(0, dim, 2, device=x.device, dtype=torch.float32) / dim))
@@ -43,10 +64,11 @@ class Attention(nn.Module):
         super().__init__()
         h, d, kv = config.num_attention_heads, config.head_dim, config.num_key_value_heads
         self.h, self.d, self.kv, self.theta = h, d, kv, config.rope_theta
-        self.q_proj = nn.Linear(config.hidden_size, h * d, bias=False)
-        self.k_proj = nn.Linear(config.hidden_size, kv * d, bias=False)
-        self.v_proj = nn.Linear(config.hidden_size, kv * d, bias=False)
-        self.o_proj = nn.Linear(h * d, config.hidden_size, bias=False)
+        linear = TernaryLinear if config.ternary else nn.Linear
+        self.q_proj = linear(config.hidden_size, h * d, bias=False)
+        self.k_proj = linear(config.hidden_size, kv * d, bias=False)
+        self.v_proj = linear(config.hidden_size, kv * d, bias=False)
+        self.o_proj = linear(h * d, config.hidden_size, bias=False)
         self.q_norm = RMSNorm(d, config.rms_norm_eps) if config.architecture_style == "bananamind2" else nn.Identity()
         self.k_norm = RMSNorm(d, config.rms_norm_eps) if config.architecture_style == "bananamind2" else nn.Identity()
 
@@ -74,9 +96,10 @@ class Block(nn.Module):
         self.norm1 = RMSNorm(config.hidden_size, config.rms_norm_eps)
         self.attn = Attention(config)
         self.norm2 = RMSNorm(config.hidden_size, config.rms_norm_eps)
-        self.gate_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
-        self.up_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
-        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias=False)
+        linear = TernaryLinear if config.ternary else nn.Linear
+        self.gate_proj = linear(config.hidden_size, config.intermediate_size, bias=False)
+        self.up_proj = linear(config.hidden_size, config.intermediate_size, bias=False)
+        self.down_proj = linear(config.intermediate_size, config.hidden_size, bias=False)
 
     def forward(self, x, attention_mask=None):
         x = x + self.attn(self.norm1(x), attention_mask)
@@ -97,7 +120,7 @@ class BananaAllForCausalLM(PreTrainedModel, GenerationMixin):
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
         self.layers = nn.ModuleList([Block(config) for _ in range(config.num_hidden_layers)])
         self.norm = RMSNorm(config.hidden_size, config.rms_norm_eps)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = (TernaryLinear if config.ternary else nn.Linear)(config.hidden_size, config.vocab_size, bias=False)
         self.post_init()
         self.tie_weights()
 

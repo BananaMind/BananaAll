@@ -12,13 +12,49 @@ npm run dev
 
 `npm run check` type-checks and builds the renderer. `npm run build && npm start` runs the built Electron app. You can set the Python executable in the Train sidebar if the ML packages are installed in a virtual environment.
 
+### Windows with an AMD GPU
+
+Use a Windows and GPU combination supported by [AMD's ROCm compatibility matrix](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html). Install the matching AMD driver, then create a project virtual environment in PowerShell:
+
+```powershell
+npm install
+py -3.12 -m venv .venv
+```
+
+Install the ROCm build of PyTorch into `.venv` using [AMD's PyTorch installer instructions](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html). Select **Windows** and the user's GPU there; the package command depends on the GPU and ROCm release. Then install BananaAll's remaining dependencies and check that PyTorch sees the GPU:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -c "import torch; print(torch.version.hip, torch.cuda.is_available(), torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+npm run dev
+```
+
+On Windows, BananaAll selects `.venv\Scripts\python.exe` automatically when that environment exists in the project. The header shows `ROCm` and the GPU name when the selected Python can use the AMD GPU; `CPU` or `PyTorch unavailable` means that environment is not using it. A different environment can be selected through **Train → Advanced → Python executable**. Install the ROCm PyTorch build before `requirements.txt` so the general `torch>=2.5` requirement is already satisfied by the GPU build. GPU detection confirms that PyTorch can see the device; training support still depends on the specific ROCm release and GPU.
+
+### macOS with Apple Silicon
+
+Install the Python dependencies with an MPS-enabled PyTorch build. On macOS, BananaAll defaults to `python3`; set **Train → Advanced → Python executable** if the packages are in another environment. The header shows `MPS · Metal GPU` when PyTorch can use the GPU. Training uses the device selected automatically by Hugging Face Trainer, and standard benchmark evaluation selects MPS. BananaAll currently runs MPS training in FP32. Some PyTorch operations may still fall back to CPU or be unsupported on MPS; see the [Hugging Face Apple Silicon guide](https://huggingface.co/docs/transformers/perf_train_special).
+
 For private or gated Hugging Face repositories, sign in once with `hf auth login`. The header shows the current login. BananaAll uses the token stored by Hugging Face; it does not ask you to paste the token into the app.
+
+## Notebook training
+
+Press **Start training** and choose **In-App-Training** (recommended) to run locally, or **Notebook** to save a standalone Python script for Google Colab or Molab. Notebook export accepts Hugging Face dataset IDs and, for fine tuning, Hugging Face base-model IDs. When pretraining with an existing tokenizer, its source must also be a Hugging Face model ID or URL. Local dataset files, tokenizer folders, and base-model folders cannot be used in a cloud notebook. Custom architecture source files and reviewed training code are bundled into the script.
+
+Open a GPU notebook, paste the entire saved `.py` file into one Python cell, and run it. The script installs the training dependencies, trains the model, and writes `<run-name>-model.zip` with the final model and tokenizer. Colab starts a download; in Molab, download the ZIP from the Files panel. Extract the ZIP to use the model locally. LoRA runs produce an adapter that still needs its base model.
+
+Notebook export checks the selected Hugging Face repositories online and includes a saved token only if a model or dataset is gated or private. Public-only exports contain no token. If the `.py` file contains a credential, keep it private and delete it when it is no longer needed. If a protected repository needs a token and none is saved locally, sign in to Hugging Face in the notebook before running the script.
 
 ## What it does
 
-- **Pretraining:** streamed, weighted dataset mixes with a token target for each source; sample previews and field mapping; a byte-level BPE tokenizer trained from the chosen mix; a continuous 3M–200M model size control that generates the architecture configuration (with the supplied 3M, 10M, 25M, 50M, and 140M configurations preserved exactly); BananaMind 2 style, LFT, BananaMind 2 + LFT, and custom Transformers code.
+- **Pretraining:** streamed, weighted dataset mixes with a token target for each source; sample previews and field mapping; either a byte-level BPE tokenizer trained from the chosen mix or a tokenizer loaded from an existing Hugging Face model or local folder; a continuous 3M–200M model size control that generates the architecture configuration (with the supplied 3M, 10M, 25M, 50M, and 140M configurations preserved exactly); BananaMind 2 style, LFT, BananaMind 2 + LFT, experimental Ternary, and custom Transformers code.
+
+Experimental **Ternary** pretraining is available only when the selected Python environment sees an NVIDIA CUDA GPU. It keeps the BananaMind 2 blocks and applies 1.58-bit ternary weight and 8-bit activation fake quantization to their linear layers with straight-through gradients. Training still uses floating-point master weights and optimizer states, and checkpoints are not packed 1.58-bit files. Keep **Trust model code** enabled to reload a saved Ternary model with `trust_remote_code=True`; the export includes the configuration and modeling Python files.
+
+**Compile model** is on by default for training. PyTorch compiles on the first training step, which can take noticeably longer than later steps. If compilation fails, BananaAll retries in regular eager mode, turns the option off for the selected Python environment, and continues training when the eager step succeeds. Change the Python environment or restart the app to make the option available again.
 - **Fine tuning:** full weight training or LoRA adapters from a Hugging Face or local causal language model. Message arrays and separate system, user, and assistant columns are supported.
-- **Custom architecture:** select `config.json` and a modeling Python file, review the generated training script, optionally edit it, then approve the run. Its stdout JSON event contract powers the in-app loss chart and status display.
+- **Custom architecture:** select `config.json`, the configuration Python module named by `auto_map.AutoConfig`, and the modeling Python module named by `auto_map.AutoModelForCausalLM`. BananaAll either trains a byte-level BPE tokenizer using the custom config's `vocab_size` or loads an existing model tokenizer. It saves the resulting vocabulary size and special token IDs in the model config. Review the generated script manually or use AI Review before approving the run. The stdout JSON event contract powers the in-app loss chart and status display.
+- **AI Review:** first-run setup can save an optional OpenRouter API key. The AI Review button sends the generated training script and custom architecture Python files to `openai/gpt-6-luna`, applies suggested script edits to the review editor after local syntax and logging-contract checks, and waits for your approval. You can add or remove the key later from the lock button in the toolbar. Keys use operating-system secure storage when available; otherwise they last only for the current app session.
 - **Evaluation:** PIQA, LAMBADA, ARC Easy, ARC Challenge, and HellaSwag through `lm-evaluation-harness`; BananaMind Base Bench 1.1, BananaMind Safety Bench 1.1, ArithMark 3.0, and Tiny Theory of Mind through continuation likelihood scoring. Reports are saved as JSON.
 - **Inference:** instruct or base completion from a Hugging Face ID, URL, or local run folder, with generation controls and a saved generation record.
 

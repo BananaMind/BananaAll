@@ -8,7 +8,7 @@ class BananaAllConfig(PretrainedConfig):
                  num_attention_heads=6, num_key_value_heads=2, head_dim=64,
                  intermediate_size=1024, max_position_embeddings=4096,
                  rope_theta=100000.0, rms_norm_eps=1e-6, architecture_style="bananamind2",
-                 lft=False, **kwargs):
+                 lft=False, ternary=False, **kwargs):
         kwargs.setdefault("tie_word_embeddings", True)
         super().__init__(**kwargs)
         self.vocab_size = vocab_size
@@ -23,4 +23,5 @@ class BananaAllConfig(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.architecture_style = architecture_style
         self.lft = lft
+        self.ternary = ternary
         self.use_cache = False
